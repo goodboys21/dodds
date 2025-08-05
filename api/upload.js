@@ -25,7 +25,7 @@ export default async function handler(req, res) {
 
   form.parse(req, async (err, fields, files) => {
     if (err) {
-      return res.status(400).json({ error: 'File error / mungkin terlalu besar' });
+      return res.status(400).json({ error: 'File error / terlalu besar' });
     }
 
     const file = files.video?.[0] || files.video;
@@ -34,29 +34,34 @@ export default async function handler(req, res) {
     }
 
     try {
-      // 1. Upload ke transfer.sh
+      // 1. Upload ke CloudGood
       const stream = fs.createReadStream(file.filepath);
-      const filename = file.originalFilename || 'video.mp4';
-      const transfer = await axios.put(`https://transfer.sh/${filename}`, stream, {
-        headers: { 'Content-Type': 'video/mp4' },
+      const cloudForm = new FormData();
+      cloudForm.append('file', stream, file.originalFilename);
+
+      const cloudRes = await axios.post('https://cloudgood.web.id/upload.php', cloudForm, {
+        headers: cloudForm.getHeaders(),
       });
 
-      const transferLink = transfer.data;
-      if (!transferLink.startsWith('https://')) throw new Error('Gagal upload ke transfer.sh');
+      const cloudLink = cloudRes.data?.url || cloudRes.data?.result || cloudRes.data;
+
+      if (!cloudLink || !cloudLink.includes('http')) {
+        throw new Error('Gagal upload ke CloudGood');
+      }
 
       // 2. Upload ke DoodStream
       const doodRes = await axios.post('https://doodapi.com/api/upload/url', null, {
         params: {
           key: DOOD_API_KEY,
-          url: transferLink,
+          url: cloudLink,
         },
       });
 
       const filecode = doodRes.data?.result?.filecode;
-      const message = doodRes.data?.msg;
+      const msg = doodRes.data?.msg;
 
       if (!filecode) {
-        throw new Error(`DoodStream error: ${message || 'tidak diketahui'}`);
+        throw new Error(`DoodStream gagal: ${msg || 'tanpa pesan'}`);
       }
 
       const doodLink = `https://dood.la/e/${filecode}`;
