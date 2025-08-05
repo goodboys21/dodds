@@ -10,7 +10,7 @@ export const config = {
 };
 
 const DOOD_API_KEY = '531994j55do8njldivzmbj';
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -25,33 +25,39 @@ export default async function handler(req, res) {
 
   form.parse(req, async (err, fields, files) => {
     if (err) {
-      return res.status(400).json({ error: 'File error atau terlalu besar' });
+      return res.status(400).json({ error: 'File error / mungkin terlalu besar' });
     }
 
     const file = files.video?.[0] || files.video;
     if (!file) {
-      return res.status(400).json({ error: 'File tidak ditemukan' });
+      return res.status(400).json({ error: 'File kosong' });
     }
 
     try {
-      const catForm = new FormData();
-      catForm.append('reqtype', 'fileupload');
-      catForm.append('fileToUpload', fs.createReadStream(file.filepath), file.originalFilename);
-
-      const catbox = await axios.post('https://catbox.moe/user/api.php', catForm, {
-        headers: catForm.getHeaders(),
+      // 1. Upload ke transfer.sh
+      const stream = fs.createReadStream(file.filepath);
+      const filename = file.originalFilename || 'video.mp4';
+      const transfer = await axios.put(`https://transfer.sh/${filename}`, stream, {
+        headers: { 'Content-Type': 'video/mp4' },
       });
 
-      const catboxLink = catbox.data;
-      const dood = await axios.post('https://doodapi.com/api/upload/url', null, {
+      const transferLink = transfer.data;
+      if (!transferLink.startsWith('https://')) throw new Error('Gagal upload ke transfer.sh');
+
+      // 2. Upload ke DoodStream
+      const doodRes = await axios.post('https://doodapi.com/api/upload/url', null, {
         params: {
           key: DOOD_API_KEY,
-          url: catboxLink,
+          url: transferLink,
         },
       });
 
-      const filecode = dood.data?.result?.filecode;
-      if (!filecode) throw new Error('Gagal upload ke DoodStream');
+      const filecode = doodRes.data?.result?.filecode;
+      const message = doodRes.data?.msg;
+
+      if (!filecode) {
+        throw new Error(`DoodStream error: ${message || 'tidak diketahui'}`);
+      }
 
       const doodLink = `https://dood.la/e/${filecode}`;
       res.json({ success: true, link: doodLink });
