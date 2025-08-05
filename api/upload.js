@@ -1,18 +1,18 @@
-// api/upload.js
-import formidable from 'formidable';
-import fs from 'fs';
-import axios from 'axios';
+const formidable = require('formidable');
+const fs = require('fs');
+const axios = require('axios');
+const FormData = require('form-data');
 
-export const config = {
+const DOOD_API_KEY = '531994j55do8njldivzmbj';
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
+
+module.exports.config = {
   api: {
     bodyParser: false,
   },
 };
 
-const DOOD_API_KEY = '531994j55do8njldivzmbj';
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
-
-export default async function handler(req, res) {
+module.exports = async function (req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'POST only' });
   }
@@ -20,21 +20,20 @@ export default async function handler(req, res) {
   const form = new formidable.IncomingForm({
     uploadDir: '/tmp',
     keepExtensions: true,
-    maxFileSize: MAX_FILE_SIZE, // enforce 5 MB
+    maxFileSize: MAX_FILE_SIZE,
   });
 
   form.parse(req, async (err, fields, files) => {
     if (err) {
-      return res.status(400).json({ error: 'Gagal parsing/form. File mungkin terlalu besar (max 5MB)' });
+      return res.status(400).json({ error: 'File error (Max 5MB?)' });
     }
 
     const file = files.video?.[0] || files.video;
     if (!file) {
-      return res.status(400).json({ error: 'Tidak ada file yang dikirim' });
+      return res.status(400).json({ error: 'File kosong' });
     }
 
     try {
-      // 1. Upload ke Catbox
       const stream = fs.createReadStream(file.filepath);
       const catForm = new FormData();
       catForm.append('reqtype', 'fileupload');
@@ -46,7 +45,6 @@ export default async function handler(req, res) {
 
       const catboxLink = catboxRes.data;
 
-      // 2. Upload ke DoodStream
       const doodRes = await axios.post('https://doodapi.com/api/upload/url', null, {
         params: {
           key: DOOD_API_KEY,
@@ -65,4 +63,4 @@ export default async function handler(req, res) {
       if (file?.filepath && fs.existsSync(file.filepath)) fs.unlinkSync(file.filepath);
     }
   });
-}
+};
