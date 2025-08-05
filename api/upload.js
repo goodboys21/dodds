@@ -34,13 +34,16 @@ export default async function handler(req, res) {
     }
 
     try {
-      // 1. Upload ke CloudGood
+      // Upload ke CloudGood
       const stream = fs.createReadStream(file.filepath);
       const cloudForm = new FormData();
       cloudForm.append('file', stream, file.originalFilename);
 
       const cloudRes = await axios.post('https://cloudgood.web.id/upload.php', cloudForm, {
-        headers: cloudForm.getHeaders(),
+        headers: {
+          ...cloudForm.getHeaders(),
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+        },
       });
 
       const cloudLink = cloudRes.data?.url || cloudRes.data?.result || cloudRes.data;
@@ -49,7 +52,7 @@ export default async function handler(req, res) {
         throw new Error('Gagal upload ke CloudGood');
       }
 
-      // 2. Upload ke DoodStream
+      // Upload ke DoodStream
       const doodRes = await axios.post('https://doodapi.com/api/upload/url', null, {
         params: {
           key: DOOD_API_KEY,
