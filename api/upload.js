@@ -1,80 +1,56 @@
-import { IncomingForm } from 'formidable';
-import fs from 'fs';
-import axios from 'axios';
-import FormData from 'form-data';
+const express = require('express');
+const multer = require('multer');
+const axios = require('axios');
+const FormData = require('form-data');
+const fs = require('fs');
+const path = require('path');
 
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
+const app = express();
+const upload = multer({ dest: 'uploads/' });
 
-const DOOD_API_KEY = '531994j55do8njldivzmbj';
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
+app.post('/tools/upload/doodstream', upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ status: false, message: 'No file uploaded' });
 
-export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'POST only' });
+  try {
+    // 1. Upload ke Catbox
+    const catboxForm = new FormData();
+    catboxForm.append('reqtype', 'fileupload');
+    catboxForm.append('fileToUpload', fs.createReadStream(req.file.path));
+
+    const catboxRes = await axios.post('https://catbox.moe/user/api.php', catboxForm, {
+      headers: catboxForm.getHeaders()
+    });
+
+    const catboxUrl = catboxRes.data;
+    if (!catboxUrl.includes('https://files.catbox.moe')) {
+      return res.status(500).json({ status: false, message: 'Catbox upload failed', response: catboxRes.data });
+    }
+
+    // 2. Upload ke Doodstream
+    const doodApiKey = '531994j55do8njldivzmbj';
+    const doodParams = new URLSearchParams();
+    doodParams.append('key', doodApiKey);
+    doodParams.append('url', catboxUrl);
+
+    const doodRes = await axios.post('https://doodapi.com/api/upload/url', doodParams.toString(), {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    });
+
+    fs.unlinkSync(req.file.path); // Hapus file lokal setelah upload
+
+    if (doodRes.data.status !== 200 || !doodRes.data.result?.filecode) {
+      return res.status(500).json({ status: false, message: 'Doodstream upload failed', response: doodRes.data });
+    }
+
+    const doodUrl = `https://dood.la/d/${doodRes.data.result.filecode}`;
+    res.json({ status: true, catbox: catboxUrl, doodstream: doodUrl });
+
+  } catch (err) {
+    if (req.file) fs.unlinkSync(req.file.path); // Cleanup
+    res.status(500).json({ status: false, message: 'Server error', error: err.message });
   }
+});
 
-  const form = new IncomingForm({
-    uploadDir: '/tmp',
-    keepExtensions: true,
-    maxFileSize: MAX_FILE_SIZE,
-  });
-
-  form.parse(req, async (err, fields, files) => {
-    if (err) {
-      return res.status(400).json({ error: 'File error / terlalu besar' });
-    }
-
-    const file = files.video?.[0] || files.video;
-    if (!file) {
-      return res.status(400).json({ error: 'File kosong' });
-    }
-
-    try {
-      // Upload ke CloudGood
-      const stream = fs.createReadStream(file.filepath);
-      const cloudForm = new FormData();
-      cloudForm.append('file', stream, file.originalFilename);
-
-      const cloudRes = await axios.post('https://cloudgood.web.id/upload.php', cloudForm, {
-        headers: {
-          ...cloudForm.getHeaders(),
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-        },
-      });
-
-      const cloudLink = cloudRes.data?.url || cloudRes.data?.result || cloudRes.data;
-
-      if (!cloudLink || !cloudLink.includes('http')) {
-        throw new Error('Gagal upload ke CloudGood');
-      }
-
-      // Upload ke DoodStream
-      const doodRes = await axios.post('https://doodapi.com/api/upload/url', null, {
-        params: {
-          key: DOOD_API_KEY,
-          url: cloudLink,
-        },
-      });
-
-      const filecode = doodRes.data?.result?.filecode;
-      const msg = doodRes.data?.msg;
-
-      if (!filecode) {
-        throw new Error(`DoodStream gagal: ${msg || 'tanpa pesan'}`);
-      }
-
-      const doodLink = `https://dood.la/e/${filecode}`;
-      res.json({ success: true, link: doodLink });
-    } catch (e) {
-      res.status(500).json({ error: e.message });
-    } finally {
-      try {
-        if (file?.filepath && fs.existsSync(file.filepath)) fs.unlinkSync(file.filepath);
-      } catch {}
-    }
-  });
-}
+app.listen(3000, () => {
+  console.log('Server running on http://localhost:3000');
+});
