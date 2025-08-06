@@ -1,56 +1,53 @@
-const express = require('express');
-const multer = require('multer');
-const axios = require('axios');
-const FormData = require('form-data');
-const fs = require('fs');
-const path = require('path');
+const axios = require("axios");
+const Busboy = require("busboy");
+const FormData = require("form-data");
 
-const app = express();
-const upload = multer({ dest: 'uploads/' });
-
-app.post('/tools/upload/doodstream', upload.single('file'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ status: false, message: 'No file uploaded' });
-
-  try {
-    // 1. Upload ke Catbox
-    const catboxForm = new FormData();
-    catboxForm.append('reqtype', 'fileupload');
-    catboxForm.append('fileToUpload', fs.createReadStream(req.file.path));
-
-    const catboxRes = await axios.post('https://catbox.moe/user/api.php', catboxForm, {
-      headers: catboxForm.getHeaders()
-    });
-
-    const catboxUrl = catboxRes.data;
-    if (!catboxUrl.includes('https://files.catbox.moe')) {
-      return res.status(500).json({ status: false, message: 'Catbox upload failed', response: catboxRes.data });
-    }
-
-    // 2. Upload ke Doodstream
-    const doodApiKey = '531994j55do8njldivzmbj';
-    const doodParams = new URLSearchParams();
-    doodParams.append('key', doodApiKey);
-    doodParams.append('url', catboxUrl);
-
-    const doodRes = await axios.post('https://doodapi.com/api/upload/url', doodParams.toString(), {
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-    });
-
-    fs.unlinkSync(req.file.path); // Hapus file lokal setelah upload
-
-    if (doodRes.data.status !== 200 || !doodRes.data.result?.filecode) {
-      return res.status(500).json({ status: false, message: 'Doodstream upload failed', response: doodRes.data });
-    }
-
-    const doodUrl = `https://dood.la/d/${doodRes.data.result.filecode}`;
-    res.json({ status: true, catbox: catboxUrl, doodstream: doodUrl });
-
-  } catch (err) {
-    if (req.file) fs.unlinkSync(req.file.path); // Cleanup
-    res.status(500).json({ status: false, message: 'Server error', error: err.message });
+module.exports = (req, res) => {
+  if (req.method !== "POST") {
+    res.status(405).json({ error: "Method Not Allowed" });
+    return;
   }
-});
 
-app.listen(3000, () => {
-  console.log('Server running on http://localhost:3000');
-});
+  const busboy = new Busboy({ headers: req.headers });
+  let fileBuffer = Buffer.alloc(0);
+  let fileName = "";
+
+  busboy.on("file", (fieldname, file, filename) => {
+    fileName = filename;
+    file.on("data", (data) => {
+      fileBuffer = Buffer.concat([fileBuffer, data]);
+    });
+  });
+
+  busboy.on("finish", async () => {
+    try {
+      // Step 1: Upload ke catbox.moe
+      const catForm = new FormData();
+      catForm.append("reqtype", "fileupload");
+      catForm.append("fileToUpload", fileBuffer, fileName);
+
+      const catbox = await axios.post("https://catbox.moe/user/api.php", catForm, {
+        headers: catForm.getHeaders(),
+      });
+
+      const catboxUrl = catbox.data;
+
+      // Step 2: Upload ke DoodStream pakai link dari catbox
+      const dood = await axios.post("https://doodapi.com/api/upload/url", null, {
+        params: {
+          key: "531994j55do8njldivzmbj", // Ganti dengan API key kamu
+          url: catboxUrl,
+        },
+      });
+
+      res.json({
+        status: "success",
+        doodstream: dood.data,
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  req.pipe(busboy);
+};
