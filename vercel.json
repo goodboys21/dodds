@@ -2,15 +2,14 @@
   "version": 2,
   "builds": [
     {
-      "src": "api/upload.js",
+      "src": "api/**/*.js",
       "use": "@vercel/node"
     }
   ],
   "routes": [
     {
-      "src": "/upload/doodstream",
-      "methods": ["POST"],
-      "dest": "api/upload.js"
+      "src": "/api/(.*)",
+      "dest": "/api/$1.js"
     }
   ]
 }
