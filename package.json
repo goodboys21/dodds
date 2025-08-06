@@ -1,10 +1,14 @@
 {
   "name": "doodstream-uploader",
   "version": "1.0.0",
-  "type": "module",
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node index.js"
+  },
   "dependencies": {
     "axios": "^1.6.8",
     "form-data": "^4.0.0",
-    "formidable": "^3.5.1"
+    "busboy": "^1.6.0"
   }
 }
