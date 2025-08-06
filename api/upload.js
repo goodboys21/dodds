@@ -1,53 +1,64 @@
-const axios = require("axios");
-const Busboy = require("busboy");
-const FormData = require("form-data");
+const formidable = require('formidable');
+const fs = require('fs');
+const axios = require('axios');
+const FormData = require('form-data');
 
-module.exports = (req, res) => {
-  if (req.method !== "POST") {
-    res.status(405).json({ error: "Method Not Allowed" });
-    return;
+module.exports = async (req, res) => {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ status: false, message: 'Method Not Allowed' });
   }
 
-  const busboy = new Busboy({ headers: req.headers });
-  let fileBuffer = Buffer.alloc(0);
-  let fileName = "";
+  const form = formidable({ multiples: false });
 
-  busboy.on("file", (fieldname, file, filename) => {
-    fileName = filename;
-    file.on("data", (data) => {
-      fileBuffer = Buffer.concat([fileBuffer, data]);
-    });
-  });
+  form.parse(req, async (err, fields, files) => {
+    if (err) return res.status(500).json({ status: false, message: 'Upload gagal', error: err });
 
-  busboy.on("finish", async () => {
     try {
-      // Step 1: Upload ke catbox.moe
-      const catForm = new FormData();
-      catForm.append("reqtype", "fileupload");
-      catForm.append("fileToUpload", fileBuffer, fileName);
+      const file = files.file;
+      const data = new FormData();
+      data.append('reqtype', 'fileupload');
+      data.append('fileToUpload', fs.createReadStream(file.filepath));
 
-      const catbox = await axios.post("https://catbox.moe/user/api.php", catForm, {
-        headers: catForm.getHeaders(),
+      // Upload ke catbox
+      const catbox = await axios.post('https://catbox.moe/user/api.php', data, {
+        headers: data.getHeaders()
       });
 
-      const catboxUrl = catbox.data;
+      if (!catbox.data.includes('https://files.catbox.moe')) {
+        return res.status(400).json({ status: false, message: 'Gagal upload ke catbox', raw: catbox.data });
+      }
 
-      // Step 2: Upload ke DoodStream pakai link dari catbox
-      const dood = await axios.post("https://doodapi.com/api/upload/url", null, {
-        params: {
-          key: "531994j55do8njldivzmbj", // Ganti dengan API key kamu
-          url: catboxUrl,
-        },
-      });
+      // Upload ke doodstream
+      const dood = await axios.post(
+        'https://doodapi.com/api/upload/url',
+        new URLSearchParams({
+          key: '531994j55do8njldivzmbj',
+          url: catbox.data.trim()
+        }).toString(),
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+          }
+        }
+      );
+
+      const result = dood.data?.result?.filecode;
+      if (!result) {
+        return res.status(500).json({ status: false, message: 'Gagal upload ke Doodstream', dood: dood.data });
+      }
 
       res.json({
-        status: "success",
-        doodstream: dood.data,
+        status: true,
+        result: 'https://dood.watch/' + result
       });
-    } catch (err) {
-      res.status(500).json({ error: err.message });
+    } catch (e) {
+      res.status(500).json({ status: false, message: 'Internal Error', error: e.message });
     }
   });
+};
 
-  req.pipe(busboy);
+export const config = {
+  api: {
+    bodyParser: false,
+  },
 };
