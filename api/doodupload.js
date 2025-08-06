@@ -39,7 +39,7 @@ export default async function handler(req, res) {
       });
 
       if (!catbox.data.startsWith("https://files.catbox.moe/")) {
-        return res.status(500).json({ success: false, message: "Gagal upload ke Catbox", raw: catbox.data });
+        return res.status(500).json({ success: false, message: "Gagal Eror", raw: catbox.data });
       }
 
       const catboxUrl = catbox.data;
@@ -74,7 +74,6 @@ export default async function handler(req, res) {
         creator: "Bagus Bahril",
         filename: fileName,
         uploaded_at: uploadDate,
-        catbox_url: catboxUrl,
         download_url: downloadUrl,
         view_url: viewUrl
       });
